@@ -24,10 +24,7 @@
 
     
     <style>
-      .body {
-        flex-grow: 1;
-        margin-bottom: 15px;
-      }
+
       
       html, body {
         height: 100%;
@@ -41,14 +38,22 @@
         height: 100%;
         max-height: 100%;
         display: flex;
+        -webkit-flex-direction: column;
         flex-direction: column;
+      }
+      .body {
+        flex:1;
+        position:relative;
+        margin-bottom: 15px;
+      }
+      .header {
+        -webkit-flex-grow: 0;
+        flex-grow: 0;
       }
       #map {
         height: 100%;
       }
-      .header {
-        flex-grow: 0;
-      }
+      
       h1 {
         font-size: 2em;
       }
