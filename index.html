@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.1.0/papaparse.js" integrity="sha256-iAuxnf8Cwr0yrQkpf6oQG4PaL/oVmoer6V/RfX2KQws=" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/jquery-3.5.0.js"></script>
+    
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+    
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js" integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous"></script>
+    <script src="https://kit.fontawesome.com/a3fc47e857.js" crossorigin="anonymous"></script>
+    <style>
+      .body {
+        flex-grow: 1;
+        margin-bottom: 15px;
+      }
+      
+      html, body {
+        height: 100%;
+        max-height: 100%;
+        width:100%;
+        margin: 0 auto;
+        background-color: #3A56A2;
+        color:white;
+      }
+      .container, .container-fluid {
+        height: 100%;
+        max-height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      #map {
+        height: 100%;
+      }
+      .header {
+        flex-grow: 0;
+      }
+      h1 {
+        font-size: 2em;
+      }
+      .tagline {
+        font-size: 1.25em;
+        font-style: italic;
+      }
+      .infoBubble {
+        color:black
+      }
+    </style>
+</head>
+<body>
+  <div class="container-fluid">
+    <div class="header" style="padding:10px">
+      <h1>Postal Greenhouse</h1>
+      <div class="tagline">Link food resource with people</div>
+      <div class="form-controls">
+        <div class="form-group">
+          <div class="input-group">
+            <input type="text" class="form-control form-control-sm" id="txtAddress" placeholder="Enter your address" />
+            <div class="input-group-append">
+              <button id="cmdSearch" style="margin-right: 5px;" class="btn btn-sm btn-primary"><span class="fas fa-search"></span> </button>
+              <button id="cmdFindLocation" class="btn btn-sm btn-primary"><span class="fas fa-crosshairs"></span></button>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col">
+            <div class="form-group">
+              <select class="form-control form-control-sm" id="cboType">
+                <option>-- What do you want to see  --</option>
+              </select>
+            </div>
+          </div>
+          <div class="col">
+            <div class="form-group">
+              <div>Radius: <span id="lblRadius">2.0 km</span></div>
+              <input type="range" min="100" max="25000" value="2000" class="form-control-range" id="sldRange">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="body">
+      <div id="map"></div>
+    </div>
+  </div>
+  <script>
+      var map;
+      var data;
+      var current_location;
+      var current_radius = 2000;
+      var files = [
+        { 
+          name: 'Local Farms',
+          url: 'DATA postal codes - local_produce_farms_geocoded.csv',
+        },
+        {
+          name: 'Food Banks',
+          url: './DATA postal codes - food banks_geocoded.csv'
+        }
+      ]
+
+      function initMap() {
+        map = new google.maps.Map(document.getElementById('map'), {
+          center: {lat: 56.1304, lng: -106.3468},
+          zoom: 4
+        });
+        map.addListener('click', function () {
+          if (current_info_window) {
+            current_info_window.close()
+            current_info_window = null;
+          }
+        })
+      }
+      $('#sldRange').on('input', function (e) {
+        var val = e.target.value;
+        current_radius = parseInt(val);
+        
+        if (val < 1000) {
+          $('#lblRadius').text(val + ' m');
+        } else {
+          $('#lblRadius').text((val/1000.0).toFixed(2) + ' km');
+        }
+        drawAndZoomVisibility();
+        loadMarkerForCurrentLocation()
+      })
+      $(document).ready(function () {
+          loadData();
+      })
+
+      $('#cmdSearch').click(function () {
+        $.get('https://maps.googleapis.com/maps/api/geocode/json',
+        {
+            address: $('#txtAddress').val(),
+            key: 'AIzaSyDF9Hh5BpoXRIwmvP_GH92scfS_VnoH2wM'
+        }).then( (res) => {
+          console.log(res)
+          if (res && res.status == "OK") {
+            if (res.results && res.results.length > 0) {
+              var result = res.results[0];
+              if (result && result.geometry && result.geometry.location) {
+                current_location = result.geometry.location;
+                drawAndZoomVisibility();
+                loadMarkerForCurrentLocation()
+              }
+            }
+          }
+        }).catch(e => {
+          alert('An error occurred while searching address.\r\nView console log for more details');
+          console.error(e);
+        })
+      })
+
+      function loadMarkerForCurrentLocation() {
+        markers.forEach(m => {
+            m.setMap(null);
+          })
+          markers = [];
+
+          var dataset = data.find(item => item.resource.name == $("#cboType").val())
+          if (!dataset) { return }
+          dataset.results.data.forEach(item => {
+            var item_coords = new google.maps.LatLng(parseFloat(item["Latitude"]), parseFloat(item["Longitude"]));
+            if (isPointWithin(item_coords, visibilityCircle.getCenter(), visibilityCircle.getRadius()/1000.0)) {
+              var marker = new google.maps.Marker({
+                position: item_coords,
+                map: map,
+              })
+              
+              marker.addListener('click', () => {
+                if (current_info_window) {
+                  current_info_window.close()
+                  current_info_window = null;
+                }
+
+                var fields = Object.keys(item).filter(e => e != "Latitude" && e != "Longitude")
+                content = '<div class="infoBubble">' + fields.map(e => `<div><b>${e}:</b> ${item[e]}</div>`).join('') + '</div';
+                var infowindow = new google.maps.InfoWindow({
+                  content: content
+                });
+                
+                infowindow.open(map, marker)
+                current_info_window = infowindow
+              })
+              markers.push(marker);
+            }
+          })
+      }
+
+      var markers = [];
+      var current_info_window = null;
+      $('#cboType').on('input', function (e) {
+        loadMarkerForCurrentLocation(e.target.value)
+      });
+
+      function isPointWithin(checkPoint, centerPoint, km) {
+        var ky = 40000 / 360.0;
+        var kx = Math.cos(Math.PI * centerPoint.lat() / 180.0) * ky;
+        var dx = Math.abs(centerPoint.lng() - checkPoint.lng()) * kx;
+        var dy = Math.abs(centerPoint.lat() - checkPoint.lat()) * ky;
+        return Math.sqrt(dx * dx + dy * dy) <= km;
+      }
+
+      $('#cmdFindLocation').click(function () {
+        if (navigator.geolocation) {
+          if (document.location.protocol != 'https:') {
+            alert('Function not available under http. (https required)')
+          }
+          navigator.geolocation.getCurrentPosition(function (position) {
+            if (position && position.coords) {
+              var coord = position.coords;
+              current_location = {lat: coord.latitude, lng: coord.longitude};
+              drawAndZoomVisibility()
+            }
+          });
+        } else {
+          alert("Geolocation is not supported by this browser.");
+        }
+      })
+      function loadData() {
+        Promise.all(
+            files.map(f => {
+              return new Promise( (success, fail) => {
+                Papa.parse(f.url, {
+                header: true,
+                download: true,
+                complete: function (res) {
+                  return success({resource: f, results: res});
+                }
+              })
+            })
+          })
+        ).then( (results) => {
+          data = results;
+
+          var cboType = $('#cboType')
+          data.sort((a,b) => {
+            if (a.resource.name < b.resource.name)
+              return -1
+            if (a.resource.name > b.resource.name)
+              return 1
+            return 0
+          }).forEach(f => {
+            cboType.append(`<option value="${f.resource.name}">${f.resource.name}</option>`);
+          })
+        });
+      }
+
+      function panToCurrentLocation() {
+        if (map && current_location) {
+          map.panTo(current_location);
+        }
+      }
+
+      var visibilityCircle;
+      function drawAndZoomVisibility() {
+        if (visibilityCircle) {
+          visibilityCircle.setMap(null);
+          visibilityCircle = null;
+        }
+        if (!current_radius || !current_location) {return;}
+        if (current_radius && current_radius) {
+          visibilityCircle = new google.maps.Circle( {
+            center: current_location,
+            radius: current_radius,
+            map: map,
+            fillColor: 'lightblue'
+          });
+
+          visibilityCircle.addListener('click', () => {
+            if (current_info_window) {
+              current_info_window.close();
+              current_info_window = null;
+            }
+          })
+
+          var bounds = visibilityCircle.getBounds();
+          map.fitBounds(bounds)
+          map.panToBounds(bounds);          
+        }
+      }
+    </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDF9Hh5BpoXRIwmvP_GH92scfS_VnoH2wM&callback=initMap"
+  async defer></script>
+</body>
+</html>
