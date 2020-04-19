@@ -130,7 +130,15 @@
           loadData();
       })
 
-      $('#cmdSearch').click(function () {
+      $('#txtAddress').on('keypress', function (e) {
+        if (e.which == 13) {
+          performAddressSearch();
+        }
+      });
+
+      $('#cmdSearch').on('click', performAddressSearch)
+
+      function performAddressSearch() {
         $.get('https://maps.googleapis.com/maps/api/geocode/json',
         {
             address: $('#txtAddress').val(),
@@ -151,7 +159,7 @@
           alert('An error occurred while searching address.\r\nView console log for more details');
           console.error(e);
         })
-      })
+      }
 
       function loadMarkerForCurrentLocation() {
         markers.forEach(m => {
